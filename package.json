@@ -1,0 +1,17 @@
+{
+  "name": "eip712-test",
+  "version": "1.0.0",
+  "description": "EIP-712 signing test implementation",
+  "main": "index.js",
+  "scripts": {
+    "test": "hardhat test"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "^4.9.0",
+    "ethers": "^5.7.2"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^2.0.0",
+    "hardhat": "^2.14.0"
+  }
+} 
