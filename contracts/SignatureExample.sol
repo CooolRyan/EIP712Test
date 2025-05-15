@@ -10,12 +10,13 @@ contract SignatureExample is EIP712, Ownable {
     struct Delegation {
         address agent;      // 대행기관 주소
         bool isValid;       // 위임 유효 여부
-        uint256 timestamp;  // 위임 시작 시간
+        uint256 validUntil; // 위임 만료 시간
+        string scope;       // 위임 범위 (예: "VOICE_VERIFICATION")
     }
 
     // EIP712 도메인 구분자를 위한 타입해시
     bytes32 public constant DELEGATE_TYPEHASH = keccak256(
-        "DelegateVoice(address principal,address agent,string voiceId,uint256 nonce,uint256 timestamp)"
+        "DelegateVoice(address principal,address agent,string voiceId,string scope,uint256 validUntil,uint256 nonce,uint256 timestamp)"
     );
 
     // 대행기관(agent)별 위임 받은 사용자(principal) 매핑
@@ -36,6 +37,8 @@ contract SignatureExample is EIP712, Ownable {
     event DelegationRegistered(
         address indexed principal,
         address indexed agent,
+        string scope,
+        uint256 validUntil,
         uint256 timestamp
     );
 
@@ -51,21 +54,28 @@ contract SignatureExample is EIP712, Ownable {
         address indexed principal,
         address indexed agent,
         string voiceId,
+        string scope,
         uint256 timestamp
     );
 
     // 위임 등록 (principal이 직접 호출)
-    function registerDelegation(address agent) external {
+    function registerDelegation(
+        address agent,
+        string memory scope,
+        uint256 validUntil
+    ) external {
         require(agent != address(0), "Invalid agent address");
         require(!delegations[msg.sender][agent].isValid, "Delegation already exists");
+        require(validUntil > block.timestamp, "Invalid expiration time");
 
         delegations[msg.sender][agent] = Delegation({
             agent: agent,
             isValid: true,
-            timestamp: block.timestamp
+            validUntil: validUntil,
+            scope: scope
         });
 
-        emit DelegationRegistered(msg.sender, agent, block.timestamp);
+        emit DelegationRegistered(msg.sender, agent, scope, validUntil, block.timestamp);
     }
 
     // 위임 취소 (principal이 직접 호출)
@@ -81,12 +91,17 @@ contract SignatureExample is EIP712, Ownable {
     function verifyVoiceWithDelegation(
         address principal,
         string memory voiceId,
+        string memory scope,
+        uint256 validUntil,
         uint256 timestamp,
         bytes memory signature
     ) public returns (bool) {
-        require(delegations[principal][msg.sender].isValid, "Not delegated");
+        Delegation memory delegation = delegations[principal][msg.sender];
+        require(delegation.isValid, "Not delegated");
+        require(block.timestamp <= delegation.validUntil, "Delegation expired");
         require(block.timestamp <= timestamp + TIMESTAMP_VALIDITY, "Verification request expired");
         require(!usedVoiceIds[voiceId], "Voice ID already used");
+        require(keccak256(bytes(delegation.scope)) == keccak256(bytes(scope)), "Invalid scope");
 
         bytes32 digest = _hashTypedDataV4(
             keccak256(
@@ -95,6 +110,8 @@ contract SignatureExample is EIP712, Ownable {
                     principal,
                     msg.sender,
                     keccak256(bytes(voiceId)),
+                    keccak256(bytes(scope)),
+                    validUntil,
                     nonces[principal]++,
                     timestamp
                 )
@@ -108,7 +125,7 @@ contract SignatureExample is EIP712, Ownable {
         // voiceId 사용 처리
         usedVoiceIds[voiceId] = true;
         
-        emit VoiceVerified(principal, msg.sender, voiceId, block.timestamp);
+        emit VoiceVerified(principal, msg.sender, voiceId, scope, block.timestamp);
         
         return true;
     }
@@ -124,10 +141,11 @@ contract SignatureExample is EIP712, Ownable {
         view 
         returns (
             bool isValid,
-            uint256 timestamp
+            uint256 validUntil,
+            string memory scope
         ) 
     {
         Delegation memory delegation = delegations[principal][agent];
-        return (delegation.isValid, delegation.timestamp);
+        return (delegation.isValid, delegation.validUntil, delegation.scope);
     }
 } 
